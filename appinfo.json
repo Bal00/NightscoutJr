@@ -1,0 +1,51 @@
+{
+    "appKeys": {},
+    "capabilities": [
+        "configurable"
+    ],
+    "companyName": "Tomandrose@gmail.com",
+    "longName": "Nightscout Junior JS",
+    "projectType": "pebblejs",
+    "resources": {
+        "media": [
+            {
+                "file": "images/menu_icon.png",
+                "name": "IMAGE_MENU_ICON",
+                "type": "bitmap"
+            },
+            {
+                "file": "images/logo_splash.png",
+                "name": "IMAGE_LOGO_SPLASH",
+                "type": "bitmap"
+            },
+            {
+                "file": "images/tile_splash.png",
+                "name": "IMAGE_TILE_SPLASH",
+                "type": "bitmap"
+            },
+            {
+                "file": "fonts/UbuntuMono-Regular.ttf",
+                "name": "MONO_FONT_14",
+                "type": "font"
+            },
+            {
+                "file": "images/Screenshot",
+                "menuIcon": true,
+                "name": "IMAGES_SCREENSHOT",
+                "type": "bitmap"
+            }
+        ]
+    },
+    "sdkVersion": "3",
+    "shortName": "Nightscout Jr",
+    "targetPlatforms": [
+        "basalt"
+    ],
+    "uuid": "1fc3a625-98c9-49ba-857e-272a7f4e409c",
+    "versionCode": 1,
+    "versionLabel": "0.0",
+    "watchapp": {
+        "hiddenApp": false,
+        "watchface": true
+    }
+}

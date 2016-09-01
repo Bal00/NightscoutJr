@@ -13,19 +13,46 @@ var Vibe = require('ui/vibe');
 var Settings = require('settings');
 //var Moment = require('moment');
 //var Clock = require('clock');
-//var Feature = require('platform/feature');
+var Feature = require('platform/feature');
+var Clay = require('./js/clay');
 
 // USER SETTINGS:
-Settings.data('NightscoutURL', {'id': 1, 'url': 'https://tobiasfelixcgm.azurewebsites.net'});
-Settings.data('Units', {'id': 2, 'unit': 'mmol'});
-Settings.data('Low', {'id': 3, 'BGLow': 3.9});
-Settings.data('High', {'id': 4, 'BGHigh': 7});
+var clayConfig = require('./js/config');
+var clayAction = require('./js/config-action');
+var clay = new Clay(clayConfig, clayAction, {autoHandleEvents: false}); //var clay = new Clay(clayConfig);
+
+Pebble.addEventListener('showConfiguration', function(e) {
+  Pebble.openURL(clay.generateUrl());
+});
+
+Pebble.addEventListener('webviewclosed', function(e) {
+  if (e && !e.response) {
+    return;
+  }
+  var dict = clay.getSettings(e.response);
+
+  // Save the Clay settings to the Settings module. 
+  Settings.option(dict);
+});
+
+//Settings.data('NightscoutURL', {'id': 1, 'url': 'https://tobiasfelixcgm.azurewebsites.net'});
+//Settings.data('Units', {'id': 2, 'unit': 'mmol'});
+//Settings.data('Low', {'id': 3, 'BGLow': 3.9});
+//Settings.data('High', {'id': 4, 'BGHigh': 7});
 
 // PRIVATE SETTINGS:
-var BGMin = 2.5;
-var BGMax = Settings.data('High').BGHigh * Settings.data('Low').BGLow / BGMin;
+console.log('NightscoutUnits: ' + Settings.option('NightscoutUnits'));
+if (Settings.option('NightscoutUnits') == 'mg') {var BGMin = 45;} else {var BGMin = 2.5;}
+var BGMax = Settings.option('SetHigh').BGHigh * Settings.option('SetLow').BGLow / BGMin;
 var BGLast = NaN;
 var timeLast = 0;
+
+// CONSTANTS:
+var Colors = {
+  'high': 'orange',
+  'mid': 'islamicGreen',
+  'low': 'red',
+};
 
 // START:
 Pebble.addEventListener("ready", function() {
@@ -44,9 +71,13 @@ setTimeout(function() {
   var main = new UI.Window({backgroundColor: 'black'});
 
   // Declare field rectangles
-  var low = new UI.Rect({backgroundColor: 'red'});
-  var mid = new UI.Rect({backgroundColor: 'islamicGreen'});
-  var high = new UI.Rect({backgroundColor: 'orange'});
+  var low = new UI.Rect({backgroundColor: Feature.color(Colors.low, 'orange')});
+  var mid = new UI.Rect({backgroundColor: Feature.color(Colors.mid, 'orange')});
+  var high = new UI.Rect({backgroundColor: Feature.color(Colors.high, 'orange')});
+
+  // Declare separator lines
+  var lowBar = new UI.Line({strokeWidth: 2, strokeColor: 'black'});
+  var highBar = new UI.Line({strokeWidth: 2, strokeColor: 'black'});
 
   // Declare foreground circle
   var circle = new UI.Circle({backgroundColor: 'white', radius: 20, position: new Vector2(-50,-50)});
@@ -64,10 +95,24 @@ var circleBack = new UI.Circle({backgroundColor: 'black', radius: 24, position: 
     textAlign: 'center'
   });
 
+// Declare timetext
+var clockText = new UI.TimeText({
+  size: new Vector2(main.size().x, 40),
+  font: 'gothic-28',
+  color: 'black',
+  backgroundColor: 'clear',
+  text: '%H:%M',
+  textAlign: 'center',
+  position: new Vector2(0, main.size().y - 40),
+});
+
   // Add elements as children to main window
   main.add(low);
   main.add(mid);
   main.add(high);
+  main.add(lowBar);
+  main.add(highBar);
+  main.add(clockText);
   main.add(circleBack);
   main.add(circle);
   main.add(textfield);
@@ -88,12 +133,16 @@ function updateMain(BG) {
 
   // Apply new coordinates:
   // Field rectangles:
-  low.size(new Vector2(parseInt(main.size().x), main.size().y - yLow - 1));
-  low.position(new Vector2(0, yLow + 1));
-  mid.size(new Vector2(parseInt(main.size().x), yLow - yHigh - 1));
-  mid.position(new Vector2(0, yHigh + 1));
-  high.size(new Vector2(parseInt(main.size().x), yHigh - 1));
+  low.size(new Vector2(main.size().x, main.size().y - yLow)); //low.size(new Vector2(parseInt(main.size().x), main.size().y - yLow - 1));
+  low.position(new Vector2(0, yLow)); // low.position(new Vector2(0, yLow + 1));
+  mid.size(new Vector2(main.size().x, yLow - yHigh)); //mid.size(new Vector2(parseInt(main.size().x), yLow - yHigh - 1));
+  mid.position(new Vector2(0, yHigh)); //mid.position(new Vector2(0, yHigh + 1));
+  high.size(new Vector2(main.size().x, yHigh)); // high.size(new Vector2(parseInt(main.size().x), yHigh - 1));
   high.position(new Vector2(0, 0));
+  lowBar.position(new Vector2(0, yLow));
+  lowBar.position2(new Vector2(main.size().x, yLow));
+  highBar.position(new Vector2(0, yHigh));
+  highBar.position2(new Vector2(main.size().x, yHigh));
   
   // Circle and text:
   if (isNaN(yBG)) {
@@ -113,11 +162,18 @@ function updateMain(BG) {
   textfield.text(sgvDisplay);
   
   // Text colour:
-  if (isLow(BG)) {textfield.color('red');}
-  else {if (isHigh(BG)) {textfield.color('orange');}
-    else {textfield.color('islamicGreen');}
+  if (isLow(BG)) {textfield.color(Colors.low);}
+  else {if (isHigh(BG)) {textfield.color(Colors.high);}
+    else {textfield.color(Colors.mid);}
   }
 
+  // Text size:
+  if (Settings.data('Units').unit == "mmol") {
+    
+  } else {
+    
+  }
+  
   // Save status:
   BGLast = BG;
   

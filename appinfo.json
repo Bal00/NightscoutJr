@@ -4,7 +4,7 @@
         "configurable"
     ],
     "companyName": "Tomandrose@gmail.com",
-    "longName": "Nightscout Junior JS",
+    "longName": "Nightscout Junior",
     "projectType": "pebblejs",
     "resources": {
         "media": [
@@ -29,8 +29,13 @@
                 "type": "font"
             },
             {
-                "file": "images/Screenshot",
+                "file": "images/NS_Jr.png",
                 "menuIcon": true,
+                "name": "IMAGES_NS_JR_PNG",
+                "type": "png"
+            },
+            {
+                "file": "images/Screenshot",
                 "name": "IMAGES_SCREENSHOT",
                 "type": "bitmap"
             }
@@ -39,7 +44,10 @@
     "sdkVersion": "3",
     "shortName": "Nightscout Jr",
     "targetPlatforms": [
-        "basalt"
+        "aplite",
+        "basalt",
+        "chalk",
+        "diorite"
     ],
     "uuid": "1fc3a625-98c9-49ba-857e-272a7f4e409c",
     "versionCode": 1,

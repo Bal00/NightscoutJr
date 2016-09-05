@@ -1,11 +1,11 @@
 module.exports = [
-  {
-    "type": "heading",
-    "defaultValue": "App Configuration",
-  },
+  //{
+  //  "type": "heading",
+  //  "defaultValue": "App Configuration",
+  //},
   {
     "type": "text",
-    "defaultValue": "Nightscout Jr is an interface to Nightscout (www.nightscout.info).",
+    "defaultValue": "Use Nightscout at your own risk, and do not use the information to make medical decisions.",
   },
   {
     "type": "section",
@@ -16,9 +16,9 @@ module.exports = [
       },
       {
         "type": "input",
-        "messageKey": "NightscoutURL",
-        "defaultValue": "https://.azurewebsites.net",
-        "label": "Nightscout URL",
+        "appKey": "NightscoutURL", // "messageKey": "NightscoutURL",
+        "defaultValue": "https://mynightscout.azurewebsites.net",
+        "label": "Nightscout website",
         "attributes": {
           "placeholder": "eg: https://mynightscout.azurewebsites.net",
           "type": "text",
@@ -26,8 +26,9 @@ module.exports = [
       },
       {
         "type": "select",
-        "messageKey": "NightscoutUnits",
-        "defaultValue": "mg",
+        "id": "selectNightscoutUnits",
+        "appKey": "NightscoutUnits", // "messageKey": "NightscoutUnits",
+        "defaultValue": "mmol",
         "label": "Units",
         "options": [
           { 
@@ -51,8 +52,9 @@ module.exports = [
       },
       {
         "type": "input",
-        "messageKey": "SetLow",
-        "defaultValue": 72,
+        "id": "inputSetLow",
+        "appKey": "SetLow", // "messageKey": "SetLow",
+        "defaultValue": 4,
         "label": "Low threshold",
         "attributes": {
           "placeholder": "lowest in-range level",
@@ -61,8 +63,9 @@ module.exports = [
       },
       {
         "type": "input",
-        "messageKey": "SetHigh",
-        "defaultValue": 135,
+        "id": "inputSetHigh",
+        "appKey": "SetHigh", // "messageKey": "SetHigh",
+        "defaultValue": 7,
         "label": "High threshold",
         "attributes": {
           "placeholder": "lowest high level",
@@ -80,9 +83,26 @@ module.exports = [
       },
       {
         "type": "toggle",
-        "messageKey": "showClock",
+        "appKey": "ShowClock", // "messageKey": "ShowClock",
         "label": "Display time",
         "defaultValue": false,
+      },
+      {
+        "type": "select",
+        "id": "FormatClock",
+        "appKey": "FormatClock", // "messageKey": "FormatClock",
+        "defaultValue": "%H",
+        "label": "Time format",
+        "options": [
+          { 
+            "label": "12 hour", 
+            "value": "%l",
+          },
+          { 
+            "label": "24 hour",
+            "value": "%H",
+          },
+        ],
       },
     ],
   },

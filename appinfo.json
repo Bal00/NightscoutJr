@@ -3,7 +3,7 @@
     "capabilities": [
         "configurable"
     ],
-    "companyName": "Tomandrose@gmail.com",
+    "companyName": "Tom Collins for Nightscout",
     "longName": "Nightscout Junior",
     "projectType": "pebblejs",
     "resources": {
@@ -29,15 +29,10 @@
                 "type": "font"
             },
             {
-                "file": "images/NS_Jr.png",
+                "file": "images/IMAGE_MENU.PNG",
                 "menuIcon": true,
-                "name": "IMAGES_NS_JR_PNG",
+                "name": "IMAGES_IMAGE_MENU_PNG",
                 "type": "png"
-            },
-            {
-                "file": "images/Screenshot",
-                "name": "IMAGES_SCREENSHOT",
-                "type": "bitmap"
             }
         ]
     },
@@ -46,12 +41,11 @@
     "targetPlatforms": [
         "aplite",
         "basalt",
-        "chalk",
-        "diorite"
+        "chalk"
     ],
-    "uuid": "1fc3a625-98c9-49ba-857e-272a7f4e409c",
+    "uuid": "fb528179-5764-44a8-84fc-adc103465d4c",
     "versionCode": 1,
-    "versionLabel": "0.0",
+    "versionLabel": "0.1",
     "watchapp": {
         "hiddenApp": false,
         "watchface": true

@@ -1,9 +1,7 @@
-/**
- * Welcome to Pebble.js!
- *
- * This is where you write your app.
- */
-
+// USEFUL REFERENCES:
+//   https://developer.pebble.com/guides/tools-and-resources/color-picker/#AAAAAA
+//   https://github.com/pebble/clay#getting-started-pebblejs
+//   https://github.com/pebble/clay/blob/v0.1.7/README.md
 
 // REQUIRE MODUES:
 var UI = require('ui');
@@ -14,86 +12,91 @@ var Settings = require('settings');
 //var Moment = require('moment');
 //var Clock = require('clock');
 var Feature = require('platform/feature');
-var Clay = require('./js/clay');
-
-// USER SETTINGS:
-var clayConfig = require('./js/config');
-var clayAction = require('./js/config-action');
-var clay = new Clay(clayConfig, clayAction, {autoHandleEvents: false}); //var clay = new Clay(clayConfig);
-
-Pebble.addEventListener('showConfiguration', function(e) {
-  Pebble.openURL(clay.generateUrl());
-});
-
-Pebble.addEventListener('webviewclosed', function(e) {
-  if (e && !e.response) {
-    return;
-  }
-  var dict = clay.getSettings(e.response);
-
-  // Save the Clay settings to the Settings module. 
-  Settings.option(dict);
-});
-
-//Settings.data('NightscoutURL', {'id': 1, 'url': 'https://tobiasfelixcgm.azurewebsites.net'});
-//Settings.data('Units', {'id': 2, 'unit': 'mmol'});
-//Settings.data('Low', {'id': 3, 'BGLow': 3.9});
-//Settings.data('High', {'id': 4, 'BGHigh': 7});
-
-// PRIVATE SETTINGS:
-console.log('NightscoutUnits: ' + Settings.option('NightscoutUnits'));
-if (Settings.option('NightscoutUnits') == 'mg') {var BGMin = 45;} else {var BGMin = 2.5;}
-var BGMax = Settings.option('SetHigh').BGHigh * Settings.option('SetLow').BGLow / BGMin;
-var BGLast = NaN;
-var timeLast = 0;
+var Clay = require('./clay');
 
 // CONSTANTS:
 var Colors = {
-  'high': 'orange',
-  'mid': 'islamicGreen',
-  'low': 'red',
+  'High': 'orange',
+  'Mid': 'islamicGreen',
+  'Low': 'red',
+};
+var Units = {
+  'mmol': {
+    'Font': 'bitham-34-medium-numbers', 
+    'SGVMin': 2.5,
+    'Precision': 0,
+    'TextFieldHeight': 42,
+  },
+  'mg': {
+    'Font': 'gothic-28-bold', 
+    'SGVMin': 45,
+    'Precision': -1,
+    'TextFieldHeight': 36,
+  },
 };
 
-// START:
-Pebble.addEventListener("ready", function() {
-  console.log('ready');
-  Update();
+// USER SETTINGS:
+var clayConfig = require('./config');
+var clayAction = require('./config-action');
+var UserData = {'NightscoutURL': 'https://mynightscout.azurewebsites.net',
+                'NightscoutUnits': 'mmol',
+                'SetLow': 4,
+                'SetHigh': 7,
+                'ShowClock': false,
+                'FormatClock': '%H',
+               };
+var clay = new Clay(clayConfig, clayAction, {userData: UserData, autoHandleEvents: false}); //var clay = new Clay(clayConfig);
+Pebble.addEventListener('showConfiguration', function(e) {
+  Pebble.openURL(clay.generateUrl());
+});
+Pebble.addEventListener('webviewclosed', function(e) {
+  console.log('webviewclosed triggered and handled manually');
+  if (e && !e.response) {
+    return;
+  }
+  console.log('Argument: ' + JSON.stringify(e));
+  var dict = clay.getSettings(e.response);
+  // Save the Clay settings to the Settings module. 
+  Settings.option(dict);
+  console.log('settings saved: ' + JSON.stringify(dict));
+  
+  // Update:
+  FetchSGV();
 });
 
-// Timeout for ready:
-setTimeout(function() {
-  console.log('ready timeout');
-  Update();
-},5000);
+// PRIVATE SETTINGS:
+var LastData = {bgs: [{datetime: 0}]};
+var Ready = false;
+var SettingsMessageGiven = false;
 
-// GENERATE WINDOW:
-  // Declare main window
-  var main = new UI.Window({backgroundColor: 'black'});
+// DECLARE MAIN WINDOW:
+var main = new UI.Window({backgroundColor: 'black'});
 
-  // Declare field rectangles
-  var low = new UI.Rect({backgroundColor: Feature.color(Colors.low, 'orange')});
-  var mid = new UI.Rect({backgroundColor: Feature.color(Colors.mid, 'orange')});
-  var high = new UI.Rect({backgroundColor: Feature.color(Colors.high, 'orange')});
+// Declare field rectangles
+var low = new UI.Rect({backgroundColor: Feature.color(Colors.Low, 'lightgray')});
+var mid = new UI.Rect({backgroundColor: Feature.color(Colors.Mid, 'lightgray')});
+var high = new UI.Rect({backgroundColor: Feature.color(Colors.High, 'lightgray')});
 
-  // Declare separator lines
-  var lowBar = new UI.Line({strokeWidth: 2, strokeColor: 'black'});
-  var highBar = new UI.Line({strokeWidth: 2, strokeColor: 'black'});
+// Declare separator lines
+var lowBar = new UI.Line({strokeWidth: 2, strokeColor: 'black'});
+var highBar = new UI.Line({strokeWidth: 2, strokeColor: 'black'});
 
-  // Declare foreground circle
-  var circle = new UI.Circle({backgroundColor: 'white', radius: 20, position: new Vector2(-50,-50)});
+// Declare foreground circle
+var circle = new UI.Circle({backgroundColor: 'white', radius: 20, position: new Vector2(-50,-50)});
 
-  // Declare background circle
+// Declare background circle
 var circleBack = new UI.Circle({backgroundColor: 'black', radius: 24, position: new Vector2(-50,-50)});
 
-  // Declare main value textfield
-  var textfield = new UI.Text({
-    size: new Vector2(60, 42),
-    font: 'bitham-34-medium-numbers', //gothic-28-bold', //'roboto-bold-subset-49', //ROBOTO_BOLD_SUBSET_49
-    color: 'black',
-    backgroundColor: 'clear',
-    text: '',
-    textAlign: 'center'
-  });
+// Declare main value textfield
+var textfield = new UI.Text({
+  size: new Vector2(60, 42),
+  font: 'gothic-28-bold', //'bitham-34-medium-numbers', //gothic-28-bold', //'roboto-bold-subset-49', //ROBOTO_BOLD_SUBSET_49
+  color: 'black',
+  backgroundColor: 'clear',
+  text: '',
+  textAlign: 'center',
+  position: new Vector2(0, parseInt(main.size().y / 2)),
+});
 
 // Declare timetext
 var clockText = new UI.TimeText({
@@ -103,10 +106,68 @@ var clockText = new UI.TimeText({
   backgroundColor: 'clear',
   text: '%H:%M',
   textAlign: 'center',
-  position: new Vector2(0, main.size().y - 40),
+  position: new Vector2(0, main.size().y + 40),
 });
 
-  // Add elements as children to main window
+// START:
+// Ready event:
+Pebble.addEventListener("ready", function() {
+  if (!Ready) {
+    console.log('ready');
+    StartUp();
+  }
+});
+
+// Timeout for ready event
+setTimeout(function() {
+  if (!Ready) {
+    console.log('ready timeout');
+    StartUp();
+  }
+},3000);
+                        
+// Check settings and initialise
+function StartUp() {
+ 
+  // Check for settings:
+  if (SettingsValid()) {
+    Ready = true;
+    
+    // Add elements as children to main window
+    PopulateMain();
+    
+    // Paint window:
+    UpdateMain(NaN);
+    
+    // GET NIGHTSCOUT DATA:
+    FetchSGV();
+ 
+  } else {
+    
+    if (!SettingsMessageGiven) {
+      // Display settings message:
+      var wind = new UI.Window({backgroundColor: 'black'});
+      var messagetext = new UI.Text({
+        size: new Vector2(wind.size().x, 80),
+        font: 'gothic-14-bold',
+        color: 'white',
+        backgroundColor: 'clear',
+        text: 'Apply settings and restart',
+        textAlign: 'center',
+        position: new Vector2(0, parseInt(wind.size().y / 2)),
+      });
+      wind.add(messagetext);
+      wind.show();
+      SettingsMessageGiven = true;
+    }
+    
+    // Wait for settings:
+    setTimeout(function(){StartUp();},10000);
+  }
+}
+
+// Add elements as children to main window
+function PopulateMain() {
   main.add(low);
   main.add(mid);
   main.add(high);
@@ -117,167 +178,178 @@ var clockText = new UI.TimeText({
   main.add(circle);
   main.add(textfield);
   main.show();
-  console.log('main window loaded for initialisation');
+}
 
-function updateMain(BG) {
+// Update display
+function UpdateMain(SGV) {
   // Calculate coordinates:
-  var BGLow = Settings.data('Low').BGLow;
-  var BGHigh = Settings.data('High').BGHigh;
+  var Unit = Settings.option('NightscoutUnits');
+  var SGVMin = Units[Unit].SGVMin;
+  var SetLow = Settings.option('SetLow');
+  var SetHigh = Settings.option('SetHigh');   
+  var SGVMax = SetHigh * SetLow / SGVMin;
+  var yLow = parseInt(main.size().y * (1 - (Math.log(SetLow/SGVMin) / Math.log(SGVMax/SGVMin))));
+  var yHigh = parseInt(main.size().y * (1 - (Math.log(SetHigh/SGVMin) / Math.log(SGVMax/SGVMin)))); 
   
-  if (!isNaN(BG)) {BGMax = Math.max(Settings.data('High').BGHigh * Settings.data('Low').BGLow / BGMin, BG);}
-  
-  var yLow = parseInt(main.size().y * (1 - (Math.log(BGLow/BGMin) / Math.log(BGMax/BGMin))));
-  var yHigh = parseInt(main.size().y * (1 - (Math.log(BGHigh/BGMin) / Math.log(BGMax/BGMin))));
-  var yBG = parseInt(main.size().y * (1 - (Math.log(parseFloat(BG)/BGMin) / Math.log(BGMax/BGMin))));
-  var sgvDisplay = Math.floor(BG).toFixed(0);
+  if (isNaN(SGV)) {
+    // Invalid SGV:
+    console.log('SGV is NaN');
+    
+    // Hide circle:
+    circleBack.position(new Vector2(parseInt(main.size().x / 2), -50));
+    circle.position(new Vector2(parseInt(main.size().x / 2), -50));
+    textfield.position(new Vector2(parseInt((main.size().x - textfield.size().x) / 2), -50));
+    
+  } else {
+    // Valid SGV - display:
+    console.log('ySGV is numeric');
+    
+    //Calculate position and rounded values:
+    SGVMax = Math.max(SetHigh * SetLow / SGVMin, SGV);
+    var ySGV = parseInt(main.size().y * (1 - (Math.log(parseFloat(SGV)/SGVMin) / Math.log(SGVMax/SGVMin))));
+    var RoundFactor = Math.pow(10, Units[Unit].Precision);
+    var sgvDisplay = (Math.floor(SGV * RoundFactor) / RoundFactor).toFixed(Math.max(Units[Unit].Precision, 0));
 
-  // Apply new coordinates:
-  // Field rectangles:
-  low.size(new Vector2(main.size().x, main.size().y - yLow)); //low.size(new Vector2(parseInt(main.size().x), main.size().y - yLow - 1));
-  low.position(new Vector2(0, yLow)); // low.position(new Vector2(0, yLow + 1));
-  mid.size(new Vector2(main.size().x, yLow - yHigh)); //mid.size(new Vector2(parseInt(main.size().x), yLow - yHigh - 1));
-  mid.position(new Vector2(0, yHigh)); //mid.position(new Vector2(0, yHigh + 1));
-  high.size(new Vector2(main.size().x, yHigh)); // high.size(new Vector2(parseInt(main.size().x), yHigh - 1));
+    // Update text:
+    console.log('sgvDisplay = ' + sgvDisplay);
+    textfield.text(sgvDisplay);
+    
+    // Text size:
+    textfield.size(new Vector2(60, Units[Unit].TextFieldHeight));
+    textfield.font(Units[Unit].Font);
+    
+    // Text colour:
+    if (isLow(SGV)) {
+      textfield.color(Colors.Low);
+    } else {
+      if (isHigh(SGV)) {
+        textfield.color(Colors.High);
+      } else {
+        textfield.color(Colors.Mid);
+      }
+    }
+    
+    // Position circle:
+    circleBack.position(new Vector2(parseInt(main.size().x / 2), ySGV));
+    circle.position(new Vector2(parseInt(main.size().x / 2), ySGV));
+    textfield.position(new Vector2(parseInt((main.size().x - textfield.size().x) / 2), ySGV - parseInt(textfield.size().y / 2)));
+  }
+    
+  // Position field rectangles and separator lines:
+  low.size(new Vector2(main.size().x, main.size().y - yLow));
+  low.position(new Vector2(0, yLow));
+  mid.size(new Vector2(main.size().x, yLow - yHigh));
+  mid.position(new Vector2(0, yHigh));
+  high.size(new Vector2(main.size().x, yHigh));
   high.position(new Vector2(0, 0));
   lowBar.position(new Vector2(0, yLow));
   lowBar.position2(new Vector2(main.size().x, yLow));
   highBar.position(new Vector2(0, yHigh));
   highBar.position2(new Vector2(main.size().x, yHigh));
   
-  // Circle and text:
-  if (isNaN(yBG)) {
-    console.log('yBG is NaN');
-    circleBack.position(new Vector2(parseInt(main.size().x / 2), -50));
-    circle.position(new Vector2(parseInt(main.size().x / 2), -50));
-    textfield.position(new Vector2(parseInt((main.size().x - textfield.size().x) / 2), -50));
+  // Clock:
+  if (Settings.option('ShowClock')) {
+    clockText.position(new Vector2(0, main.size().y - 40));
   } else {
-    console.log('yBG is numeric');
-    circleBack.position(new Vector2(parseInt(main.size().x / 2), yBG));
-    circle.position(new Vector2(parseInt(main.size().x / 2), yBG));
-    textfield.position(new Vector2(parseInt((main.size().x - textfield.size().x) / 2), yBG - parseInt(textfield.size().y / 2)));
+    clockText.position(new Vector2(0, main.size().y + 40));
   }
-  
-  // Update text:
-  console.log('sgvDisplay = ' + sgvDisplay);
-  textfield.text(sgvDisplay);
-  
-  // Text colour:
-  if (isLow(BG)) {textfield.color(Colors.low);}
-  else {if (isHigh(BG)) {textfield.color(Colors.high);}
-    else {textfield.color(Colors.mid);}
-  }
+  clockText.text(Settings.option('FormatClock') + ':%M');
+}
 
-  // Text size:
-  if (Settings.data('Units').unit == "mmol") {
-    
-  } else {
-    
-  }
+// GET NIGHTSCOUT DATA:
+function FetchSGV() {
+  var Result = {};
   
-  // Save status:
-  BGLast = BG;
-  
+  // Construct URL:
+  var Site = Settings.option('NightscoutURL');
+  var Units = Settings.option('NightscoutUnits');
+  var URL = Site + '/pebble?units=' + Units;
+  console.log('Nightscout URL: ' + URL);
+
+  // Execute the request:
+  console.log('Starting ajax');
+  ajax({ url: URL, type: 'json' },
+       function(data, status, req) {
+         console.log('ajax result: ' + JSON.stringify(data));
+         // Success, process result:
+         try {
+           var dateTime = data.bgs[0].datetime;
+           var timeLast = LastData.bgs[0].datetime;
+           var isNew = dateTime != timeLast;
+
+           Result.data = data;
+           Result.isNew = isNew;
+
+         } catch(err) {
+           Result.data = LastData;
+           Result.isNew = false;
+           console.log('Data interpret error: ' + err.message);
+         }
+         Update(Result);
+       },
+       function(error) {
+         console.log('ajax error: ' + error);
+         Result.data = LastData;
+         Result.isNew = false;
+         Update(Result);
+       }
+    );
 }
 
 // UPDATE STATUS:
-function Update() {
+function Update(result) {
   // GET SGV FROM NIGHTSCOUT:
-  // Construct URL:
-  var site = Settings.data('NightscoutURL').url;
-  var units = Settings.data('Units').unit;
-  var URL = site + '/pebble?units=' + units;
+  //var result = FetchSGV();
+  var isNew = result.isNew;
+  var data = result.data;
+  console.log('data: ' + JSON.stringify(data));
 
-  // Build the request:
-  var sgv = [ ];
-  var datetime = [ ];
-
-  // Execute the request:
-  console.log('starting ajax');
-  ajax({ url: URL, type: 'json' },
-    function(data, status, req) {
-      // Process result:
-      try {
-        sgv = data.bgs[0].sgv;
-        datetime = data.bgs[0].datetime;
-        console.log('Sample time: ' + datetime);
-        console.log('NitSct time: ' + data.status[0].now);
-        console.log('Current time: ' + Date.now());
-        var timeAgo = Date.now() - datetime;
-        console.log('Time ago: ' + timeAgo);
-        var isNew = datetime != timeLast;
-        console.log('New: ' + isNew);
-        
-        // Don't use old values:
-        if (timeAgo > 600000) {sgv = NaN;}
-        
-        // Notify the user:
-        if (isNew && !isNaN(sgv)) {
-          // Low (every time):
-          if (isLow(sgv)) {Vibe.vibrate('long');}
-          // High (first time):
-          if (isHigh(sgv) && !isHigh(BGLast)) {Vibe.vibrate('short');}
-        }
-        
-      } catch(err) {
-        sgv = NaN;
-        console.log(err.message);
-      }
-      
-      // Update main value textfield
-      if (sgv != BGLast) {
-        updateMain(sgv);
-        console.log('main window loaded with value');
-      }
-    },
-    function(error) {
-      console.log('ajax error');
-      console.log('Download failed: ' + error);
-      updateMain(NaN);
-      
-      console.log('main window loaded with dash');
-    }
-  );
-  setTimeout(function(){Update();},60000);
+  // Evaluate result:
+  var SGV = data.bgs[0].sgv;
+  var SVGLast = LastData.bgs[0].sgv;
+  var datetime = data.bgs[0].datetime;
+  var timeAgo = Date.now() - datetime;
+  
+  console.log('Sample time: ' + datetime);
+  //console.log('NitSct time: ' + data.status[0].now);
+  console.log('Current time: ' + Date.now());
+  console.log('Time ago: ' + timeAgo);
+  console.log('New: ' + isNew);
+  
+  // Don't use old values:
+  if (timeAgo > 600000) {
+    console.log('Data older than 10 minutes');
+    SGV = NaN;
+  }
+  
+  // Notify the user:
+  if (isNew && !isNaN(SGV)) {
+    // Low (every time):
+    if (isLow(SGV)) {Vibe.vibrate('long');}
+    
+    // High (first time):
+    if (isHigh(SGV) && !isHigh(SVGLast)) {Vibe.vibrate('short');}
+  }
+  
+  // Update main value textfield
+  UpdateMain(SGV);
+  console.log('main window loaded with value');
+  
+  // Save status:
+  LastData = data;
+  
+  // Loop:
+  setTimeout(function(){FetchSGV();},60000);
 }
 
-function isLow(sgv) {return (sgv < Settings.data('Low').BGLow)}
-function isHigh(sgv) {return (sgv >= Settings.data('High').BGHigh)}
-
-//main.on('click', 'up', function(e) {
-//  var menu = new UI.Menu({
-//    sections: [{
-//      items: [{
-//        title: 'Pebble.js',
-//        icon: 'images/menu_icon.png',
-//        subtitle: 'Can do Menus'
-//      }, {
-//        title: 'Second Item',
-//        subtitle: 'Subtitle Text'
-//      }, {
-//        title: 'Third Item',
-//      }, {
-//        title: 'Fourth Item',
-//      }]
-//    }]
-//  });
-//  menu.on('select', function(e) {
-//    console.log('Selected item #' + e.itemIndex + ' of section #' + e.sectionIndex);
-//    console.log('The item is titled "' + e.item.title + '"');
-//  });
-//  menu.show();
-//});
-
-//main.on('click', 'select', function(e) {
-//  var wind = new UI.Window({
-//    backgroundColor: 'black'
-//  });
-//  wind.show();
-//});
-
-//main.on('click', 'down', function(e) {
-//  var card = new UI.Card();
-//  card.title('A Card');
-//  card.subtitle('Is a Window');
-//  card.body('The simplest window type in Pebble.js.');
-//  card.show();
-//});
+function isLow(sgv) {return (sgv < parseFloat(Settings.option('SetLow')));}
+function isHigh(sgv) {return (sgv >= parseFloat(Settings.option('SetHigh')));}
+function SettingsValid() {
+  try {
+    var Unit = Settings.option('NightscoutUnits');
+    var SGVMin = Units[Unit].SGVMin;
+    return (SGVMin == SGVMin);
+  } catch(e) {
+    return (false);
+  }
+}

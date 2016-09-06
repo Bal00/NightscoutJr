@@ -81,12 +81,12 @@ module.exports = [
         "type": "heading",
         "defaultValue": "General",
       },
-      {
-        "type": "toggle",
-        "appKey": "ShowClock", // "messageKey": "ShowClock",
-        "label": "Display time",
-        "defaultValue": false,
-      },
+      //{
+      //  "type": "toggle",
+      //  "appKey": "ShowClock", // "messageKey": "ShowClock",
+      //  "label": "Display time",
+      //  "defaultValue": false,
+      //},
       {
         "type": "select",
         "id": "FormatClock",
@@ -94,6 +94,10 @@ module.exports = [
         "defaultValue": "%H",
         "label": "Time format",
         "options": [
+          { 
+            "label": "None", 
+            "value": "na",
+          },
           { 
             "label": "12 hour", 
             "value": "%l",

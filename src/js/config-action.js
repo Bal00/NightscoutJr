@@ -15,20 +15,20 @@ module.exports = function(minified) {
     //clayConfig.getItemById('inputSetLow').value = (Factor * parseFloat(clayConfig.getItemById('inputSetLow').value)).toString(0);
   //});
   
-  function updateUnits() {
-    console.log('Updating units!');
-    console.log(this.get());
+//  function updateUnits() {
+//    console.log('Updating units!');
+//    console.log(this.get());
       //clayConfig.getItemById('selectNightscoutUnits').value;
     //} else {
     //  clayConfig.getItemByAppKey('background').disable();
    // }
-  }
+//  }
 
-  clayConfig.on(clayConfig.EVENTS.AFTER_BUILD, function() {
-    console.log('after build event triggered');
-    var NightscoutUnits = clayConfig.getItemByAppKey('NightscoutUnits');
-    updateUnits.call(NightscoutUnits);
-    NightscoutUnits.on('change', updateUnits);
+//  clayConfig.on(clayConfig.EVENTS.AFTER_BUILD, function() {
+//    console.log('after build event triggered');
+//    var NightscoutUnits = clayConfig.getItemByAppKey('NightscoutUnits');
+//    updateUnits.call(NightscoutUnits);
+//    NightscoutUnits.on('change', updateUnits);
 //
 //    // Hide the color picker for aplite
 //    if (!clayConfig.meta.activeWatchInfo || clayConfig.meta.activeWatchInfo.platform === 'aplite') {
@@ -43,6 +43,6 @@ module.exports = function(minified) {
 //      .error(function(status, statusText, responseText) {
 //        // Handle the error
 //      });
-  });
+//  });
 
 };

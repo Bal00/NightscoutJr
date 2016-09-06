@@ -37,15 +37,15 @@ var Units = {
 
 // USER SETTINGS:
 var clayConfig = require('./config');
-var clayAction = require('./config-action');
-var UserData = {'NightscoutURL': 'https://mynightscout.azurewebsites.net',
-                'NightscoutUnits': 'mmol',
-                'SetLow': 4,
-                'SetHigh': 7,
-                'ShowClock': false,
-                'FormatClock': '%H',
-               };
-var clay = new Clay(clayConfig, clayAction, {userData: UserData, autoHandleEvents: false}); //var clay = new Clay(clayConfig);
+//var clayAction = require('./config-action');
+//var UserData = {'NightscoutURL': 'https://mynightscout.azurewebsites.net',
+//                'NightscoutUnits': 'mmol',
+//                'SetLow': 4,
+//                'SetHigh': 7,
+//                //'ShowClock': false,
+//                'FormatClock': '%H',
+//               };
+var clay = new Clay(clayConfig, null, {autoHandleEvents: false}); //var clay = new Clay(clayConfig, clayAction, {userData: UserData, autoHandleEvents: false}); //var clay = new Clay(clayConfig);
 Pebble.addEventListener('showConfiguration', function(e) {
   Pebble.openURL(clay.generateUrl());
 });
@@ -54,12 +54,22 @@ Pebble.addEventListener('webviewclosed', function(e) {
   if (e && !e.response) {
     return;
   }
-  console.log('Argument: ' + JSON.stringify(e));
-  var dict = clay.getSettings(e.response);
-  // Save the Clay settings to the Settings module. 
-  Settings.option(dict);
-  console.log('settings saved: ' + JSON.stringify(dict));
   
+  // Clean argument e:
+  //e.response = CleanSettings(e.response);
+  console.log('Response: ' + e.response);
+  
+  try {
+    // //e = JSON.parse(JSON.stringify(e).replace('\"','"'));
+    var dict = clay.getSettings(e.response);
+    // Save the Clay settings to the Settings module.
+    //dict = CleanSettings(dict);
+    Settings.option(dict);
+    //try {console.log('Settings saved: ' + JSON.stringify(dict));} catch(err) {console.log('Settings saved error: ' + err.message);}
+  } catch (err) {
+    console.log('Settings error: ' + err.message);
+  }
+    
   // Update:
   FetchSGV();
 });
@@ -248,10 +258,10 @@ function UpdateMain(SGV) {
   highBar.position2(new Vector2(main.size().x, yHigh));
   
   // Clock:
-  if (Settings.option('ShowClock')) {
-    clockText.position(new Vector2(0, main.size().y - 40));
-  } else {
+  if (Settings.option('FormatClock') == 'na') {
     clockText.position(new Vector2(0, main.size().y + 40));
+  } else {
+    clockText.position(new Vector2(0, main.size().y - 40));
   }
   clockText.text(Settings.option('FormatClock') + ':%M');
 }
@@ -344,6 +354,32 @@ function Update(result) {
 
 function isLow(sgv) {return (sgv < parseFloat(Settings.option('SetLow')));}
 function isHigh(sgv) {return (sgv >= parseFloat(Settings.option('SetHigh')));}
+function CleanSettings(str) {
+  //var str = Settings;
+  console.log('Raw settings: ' + str);
+  //str = encodeURIComponent(str);
+  //console.log('Raw settings: ' + str);
+  str = str.replace('%5C','');
+  console.log('Clean settings: ' + str);
+  str = str.replace(/\\/g, '');
+  console.log('Clean settings: ' + str);
+  
+  if (str.charAt(0) != '%') { 
+    str = encodeURIComponent(str);
+    console.log('Clean settings: ' + str);
+  }
+
+  //str = JSON.stringify(str);
+  //console.log('Raw settings: ' + str);
+  //str = encodeURIComponent(str.replace(/\\/g, '').replace(/(\"\{)+/g,'{').replace(/(\}\")+/g,'}'));
+  //str = str.replace(/\\/g, '');
+  //console.log('Clean settings: ' + str);
+  //if (str.charAt(0) != /\"/) {
+  //  str = '"' + str + '"';
+  //  console.log('Clean settings: ' + str);
+  //}
+  return (str);
+}
 function SettingsValid() {
   try {
     var Unit = Settings.option('NightscoutUnits');

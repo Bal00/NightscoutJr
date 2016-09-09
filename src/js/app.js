@@ -45,10 +45,32 @@ var clayConfig = require('./config');
 //                //'ShowClock': false,
 //                'FormatClock': '%H',
 //               };
+
+//if (SettingsValid()) {UserData = Settings.option;}
 var clay = new Clay(clayConfig, null, {autoHandleEvents: false}); //var clay = new Clay(clayConfig, clayAction, {userData: UserData, autoHandleEvents: false}); //var clay = new Clay(clayConfig);
+
+
 Pebble.addEventListener('showConfiguration', function(e) {
+  
+  console.log('showConfiguration argument: ' + JSON.stringify(e));
+  
   Pebble.openURL(clay.generateUrl());
+  
+//  var claySettings = JSON.parse(localStorage.getItem("clay-settings"));
+//  for (var key in claySettings) {
+//    if (claySettings.hasOwnProperty(key)) {
+//      if(key in Settings.option){
+//        console.log(key + " -> " + Settings.option(key));
+//        claySettings[key] = Settings.option(key);
+//      }
+//    }
+//  }	
+//  localStorage["clay-settings"] = JSON.stringify(claySettings);
+//  Pebble.openURL(clay.generateUrl());
+//  console.log("configuration shown");	
 });
+
+
 Pebble.addEventListener('webviewclosed', function(e) {
   console.log('webviewclosed triggered and handled manually');
   if (e && !e.response) {
@@ -57,11 +79,17 @@ Pebble.addEventListener('webviewclosed', function(e) {
   
   // Clean argument e:
   //e.response = CleanSettings(e.response);
+  console.log('Response type: ' + typeof e.response);
   console.log('Response: ' + e.response);
   
   try {
     // //e = JSON.parse(JSON.stringify(e).replace('\"','"'));
-    var dict = clay.getSettings(e.response);
+    //console.log('New settings: ' + JSON.stringify(getSettings(e.response)));
+    //var dict = clay.getSettings(e.response);
+    var dict = getSettings(e.response);
+    
+    console.log('dict type: ' + typeof dict);
+    console.log('dict: ' + JSON.stringify(dict));
     // Save the Clay settings to the Settings module.
     //dict = CleanSettings(dict);
     Settings.option(dict);
@@ -388,4 +416,21 @@ function SettingsValid() {
   } catch(e) {
     return (false);
   }
+}
+function getSettings(strSettings) {
+  strSettings = strSettings.replace('%5C','');
+  console.log('getSettings clean settings stage 1: ' + strSettings);
+  strSettings = strSettings.replace(/\\/g, '');
+  console.log('getSettings clean settings stage 2: ' + strSettings);
+  if (strSettings.charAt(0) == '%') {
+    console.log('getSettings decoding input..');
+    strSettings = decodeURIComponent(strSettings);
+    console.log('getSettings decoded input: ' + strSettings);
+  }
+  var SettingsRaw = JSON.parse(strSettings);
+  console.log('getSettings parsed input: ' + JSON.stringify(SettingsRaw));
+  var SettingsOut = {};
+  for (var key in SettingsRaw) {SettingsOut[key] = SettingsRaw[key].value;}
+  console.log('getSettings output: ' + JSON.stringify(SettingsOut));
+  return (SettingsOut);
 }

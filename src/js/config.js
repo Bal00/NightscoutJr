@@ -28,7 +28,7 @@ module.exports = [
         "type": "select",
         "id": "selectNightscoutUnits",
         "appKey": "NightscoutUnits", // "messageKey": "NightscoutUnits",
-        "defaultValue": "mmol",
+        //"defaultValue": "mmol",
         "label": "Units",
         "options": [
           { 
@@ -54,7 +54,7 @@ module.exports = [
         "type": "input",
         "id": "inputSetLow",
         "appKey": "SetLow", // "messageKey": "SetLow",
-        "defaultValue": 4,
+        //"defaultValue": 4,
         "label": "Low threshold",
         "attributes": {
           "placeholder": "lowest in-range level",
@@ -65,7 +65,7 @@ module.exports = [
         "type": "input",
         "id": "inputSetHigh",
         "appKey": "SetHigh", // "messageKey": "SetHigh",
-        "defaultValue": 7,
+        //"defaultValue": 7,
         "label": "High threshold",
         "attributes": {
           "placeholder": "lowest high level",
@@ -81,17 +81,11 @@ module.exports = [
         "type": "heading",
         "defaultValue": "General",
       },
-      //{
-      //  "type": "toggle",
-      //  "appKey": "ShowClock", // "messageKey": "ShowClock",
-      //  "label": "Display time",
-      //  "defaultValue": false,
-      //},
       {
         "type": "select",
         "id": "FormatClock",
         "appKey": "FormatClock", // "messageKey": "FormatClock",
-        "defaultValue": "%H",
+        //"defaultValue": "%H",
         "label": "Time format",
         "options": [
           { 

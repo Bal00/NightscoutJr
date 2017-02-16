@@ -42,17 +42,20 @@ var clayConfig = require('./config');
 //                'NightscoutUnits': 'mmol',
 //                'SetLow': 4,
 //                'SetHigh': 7,
-//                //'ShowClock': false,
 //                'FormatClock': '%H',
 //               };
 
-//if (SettingsValid()) {UserData = Settings.option;}
 var clay = new Clay(clayConfig, null, {autoHandleEvents: false}); //var clay = new Clay(clayConfig, clayAction, {userData: UserData, autoHandleEvents: false}); //var clay = new Clay(clayConfig);
 
 
 Pebble.addEventListener('showConfiguration', function(e) {
   
   console.log('showConfiguration argument: ' + JSON.stringify(e));
+  console.log('Settings.option(): ' + JSON.stringify(Settings.option()));
+  
+  //if (SettingsValid()) {
+    //clayConfig.getItemByAppKey('NightscoutURL').set(Settings.option('NightscoutURL'));
+  //}
   
   Pebble.openURL(clay.generateUrl());
   
@@ -79,17 +82,18 @@ Pebble.addEventListener('webviewclosed', function(e) {
   
   // Clean argument e:
   //e.response = CleanSettings(e.response);
-  console.log('Response type: ' + typeof e.response);
-  console.log('Response: ' + e.response);
+  //console.log('Response type: ' + typeof e.response);
+  //console.log('Response: ' + e.response);
   
   try {
     // //e = JSON.parse(JSON.stringify(e).replace('\"','"'));
     //console.log('New settings: ' + JSON.stringify(getSettings(e.response)));
-    //var dict = clay.getSettings(e.response);
-    var dict = getSettings(e.response);
     
-    console.log('dict type: ' + typeof dict);
-    console.log('dict: ' + JSON.stringify(dict));
+    var dict = clay.getSettings(e.response);
+    //var dict = getSettings(e.response);
+    
+    //console.log('dict type: ' + typeof dict);
+    //console.log('dict: ' + JSON.stringify(dict));
     // Save the Clay settings to the Settings module.
     //dict = CleanSettings(dict);
     Settings.option(dict);
@@ -243,7 +247,10 @@ function UpdateMain(SGV) {
     console.log('ySGV is numeric');
     
     //Calculate position and rounded values:
-    SGVMax = Math.max(SetHigh * SetLow / SGVMin, SGV);
+    SGVMax = Math.max(SetHigh * SetLow / SGVMin, SGV * Math.pow(SGV / SGVMin, 1/7));
+    yLow = parseInt(main.size().y * (1 - (Math.log(SetLow/SGVMin) / Math.log(SGVMax/SGVMin))));
+    yHigh = parseInt(main.size().y * (1 - (Math.log(SetHigh/SGVMin) / Math.log(SGVMax/SGVMin)))); 
+    
     var ySGV = parseInt(main.size().y * (1 - (Math.log(parseFloat(SGV)/SGVMin) / Math.log(SGVMax/SGVMin))));
     var RoundFactor = Math.pow(10, Units[Unit].Precision);
     var sgvDisplay = (Math.floor(SGV * RoundFactor) / RoundFactor).toFixed(Math.max(Units[Unit].Precision, 0));

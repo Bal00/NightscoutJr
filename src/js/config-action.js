@@ -3,6 +3,8 @@ module.exports = function(minified) {
   var _ = minified._;
   var $ = minified.$;
   var HTML = minified.HTML;
+  
+  var Settings = require(settings);
 
   //clayConfig.on(clayConfig.getItemById('selectNightscoutUnits').change, function() {
     //console.log('Current unit: ' + clayConfig.getItemById('selectNightscoutUnits').value);
@@ -24,9 +26,12 @@ module.exports = function(minified) {
    // }
 //  }
 
-//  clayConfig.on(clayConfig.EVENTS.AFTER_BUILD, function() {
-//    console.log('after build event triggered');
-//    var NightscoutUnits = clayConfig.getItemByAppKey('NightscoutUnits');
+  clayConfig.on(clayConfig.EVENTS.AFTER_BUILD, function() {
+    console.log('After build event triggered');
+    var NightscoutURL = Settings.option('NightscoutURL');
+    console.log('NightscoutURL: ' + NightscoutURL);
+    clayConfig.getItemByAppKey('NightscoutURL').set(NightscoutURL);
+    console.log('NightscoutURL set');
 //    updateUnits.call(NightscoutUnits);
 //    NightscoutUnits.on('change', updateUnits);
 //
@@ -43,6 +48,6 @@ module.exports = function(minified) {
 //      .error(function(status, statusText, responseText) {
 //        // Handle the error
 //      });
-//  });
+  });
 
 };

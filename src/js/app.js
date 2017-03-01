@@ -34,6 +34,8 @@ var Units = {
     'TextFieldHeight': 36,
   },
 };
+var TimeSpan = 3600000;
+var History = 6;
 
 // USER SETTINGS:
 var clayConfig = require('./config');
@@ -107,7 +109,7 @@ Pebble.addEventListener('webviewclosed', function(e) {
 });
 
 // PRIVATE SETTINGS:
-var LastData = {bgs: [{datetime: 0}]};
+var LastData = [{date: 0, sgv: NaN}];
 var Ready = false;
 var SettingsMessageGiven = false;
 
@@ -123,11 +125,11 @@ var high = new UI.Rect({backgroundColor: Feature.color(Colors.High, 'lightgray')
 var lowBar = new UI.Line({strokeWidth: 2, strokeColor: 'black'});
 var highBar = new UI.Line({strokeWidth: 2, strokeColor: 'black'});
 
-// Declare foreground circle
-var circle = new UI.Circle({backgroundColor: 'white', radius: 20, position: new Vector2(-50,-50)});
-
-// Declare background circle
-var circleBack = new UI.Circle({backgroundColor: 'black', radius: 24, position: new Vector2(-50,-50)});
+// Declare circles
+var circleHist = [ ];
+var circleHistBack = [ ];
+var circlePred = [ ];
+var circlePredBack = [ ];
 
 // Declare main value textfield
 var textfield = new UI.Text({
@@ -179,7 +181,7 @@ function StartUp() {
     PopulateMain();
     
     // Paint window:
-    UpdateMain(NaN);
+    Update(LastData);
     
     // GET NIGHTSCOUT DATA:
     FetchSGV();
@@ -216,70 +218,266 @@ function PopulateMain() {
   main.add(lowBar);
   main.add(highBar);
   main.add(clockText);
-  main.add(circleBack);
-  main.add(circle);
+  
+  for (var i = 0; i < History; i++) {
+    circlePred[i] = new UI.Circle({backgroundColor: 'white', radius: 16, position: new Vector2(-50,-50)});
+    circlePredBack[i] = new UI.Circle({backgroundColor: 'black', radius: 20, position: new Vector2(-50,-50)});
+    
+    main.add(circlePredBack[i]);
+    main.add(circlePred[i]);
+  }
+
+  for (i = History - 1; i >= 0; i--) {
+    circleHist[i] = new UI.Circle({backgroundColor: 'white', radius: 20, position: new Vector2(-50,-50)});
+    circleHistBack[i] = new UI.Circle({backgroundColor: 'black', radius: 24, position: new Vector2(-50,-50)});
+    
+    main.add(circleHistBack[i]);
+    main.add(circleHist[i]);
+  }
+
   main.add(textfield);
   main.show();
 }
 
+// GET NIGHTSCOUT DATA:
+function FetchSGV() {
+  var Result = {};
+  
+  // Construct URL:
+  var Site = Settings.option('NightscoutURL');
+  var Units = Settings.option('NightscoutUnits');
+  //var URL = Site + '/pebble?units=' + Units;
+  var URL = Site + '/api/v1/entries/sgv?count=' + History.toFixed(0);
+  console.log('Nightscout URL: ' + URL);
+
+  // Execute the request:
+  console.log('Starting ajax');
+  ajax({ url: URL },
+       function(data, status, req) {
+         console.log('ajax result: ' + data);
+         // Success, process result:
+         try {
+           var entryStrings = data.split('\n');
+           console.log('First line: ' + entryStrings[0]);
+           var Entries = [ ];
+           for (var i = 0; i < entryStrings.length; i++) {
+             var entryValues = entryStrings[i].split('\t');
+             
+             var Entry = {
+               "dateString": entryValues[0], 
+               "date": Number(entryValues[1]), 
+               "sgv": Number(entryValues[2]), 
+               "direction": entryValues[3], 
+               "device": entryValues[4]
+             };
+             if (Units == "mmol") {Entry.sgv = Entry.sgv / 18;}
+             Entries.push(Entry);
+           }
+
+           Result = Entries;
+           //Result.isNew = isNew;
+
+         } catch(err) {
+           Result = LastData;
+           //Result.isNew = false;
+           console.log('Data interpret error: ' + err.message);
+         }
+         Update(Result);
+       },
+       function(error) {
+         console.log('ajax error: ' + error);
+         Result = LastData;
+         //Result.isNew = false;
+         Update(Result);
+       }
+    );
+}
+
+// UPDATE STATUS:
+function Update(data) {
+  // GET SGV FROM NIGHTSCOUT:
+  //var result = FetchSGV();
+  //var isNew = result.isNew;
+  //var data = result.Entries;
+  console.log('data: ' + JSON.stringify(data));
+  
+  // Evaluate result:
+  var now = Date.now();
+  var SGV = data[0].sgv;
+  var SVGLast = LastData[0].sgv;
+  //var datetime = data[0].date;
+  //var timeAgo = now - datetime;
+  
+  // Predict:
+  //  Adjust time:
+  for (var i = 0; i < data.length; i++) {
+    data[i].timeAgo = now - data[i].date;
+  }
+  
+  // Declare variables:
+  var future = [ ];
+  var coeffs = [0, 0, data[0].sgv];
+  
+  // Prepare to predict future values:
+  for (i = 0; i < History; i++) {
+    future.push({"timeAgo": -300000 * i});
+    future[i].date = now - future[i].timeAgo;
+    future[i].sgv = NaN;
+  }
+  
+  try {
+    if(data.length > 2){
+      //  Generate constants:
+      var order = 2;
+      coeffs = polyFit([[data[2].timeAgo/10000,data[2].sgv],[data[1].timeAgo/10000,data[1].sgv],[data[0].timeAgo/10000,data[0].sgv]],order);
+      
+      // Predict future values:
+      for (i = 0; i < History; i++) {
+        future[i].sgv = 0;
+        for (var pow = 0; pow <= order; pow++) {
+          future[i].sgv += coeffs[pow]*Math.pow(future[i].timeAgo/10000,pow);
+        }
+      }
+    }
+  } catch(err) {
+    console.log("Unable to evaluate prediction polynomial: " + err.message);
+  }
+
+  // Analyse:
+  var stats = {"old":  data[0].timeAgo > 600000, "max": Settings.option('SetHigh') * Settings.option('SetLow') / Units[Settings.option('NightscoutUnits')].SGVMin};
+  for (i = 0; i < data.length; i++) {
+    if (!isNaN(data[i].sgv)) {stats.max = Math.max(stats.max,data[i].sgv);}
+  }
+  stats.isNew = data[0].date != LastData[0].date;
+  
+    // Debugging:
+  console.log('Sample time: ' + data[0].date);
+  //console.log('NitSct time: ' + data.status[0].now);
+  console.log('Current time: ' + now);
+  console.log('Time ago: ' + data[0].timeAgo);
+  console.log('New: ' + stats.isNew);
+  console.log('Stale (old): ' + stats.old);
+  
+  // Notify the user:
+  if (stats.isNew && !stats.old) {
+    // Low (every time):
+    if (isLow(SGV)) {Vibe.vibrate('long');}
+    
+    // High (first time):
+    if (isHigh(SGV) && !isHigh(SVGLast)) {Vibe.vibrate('short');}
+  }
+  
+  // Update main value textfield
+  UpdateMain(data, future, stats);
+  console.log('main window loaded with value');
+  
+  // Save status:
+  LastData = data;
+  
+  // Loop:
+  setTimeout(function(){FetchSGV();},60000);
+}
+
 // Update display
-function UpdateMain(SGV) {
+function UpdateMain(data, future, stats) {
   // Calculate coordinates:
+  //var SGV = data[0].sgv;
   var Unit = Settings.option('NightscoutUnits');
   var SGVMin = Units[Unit].SGVMin;
   var SetLow = Settings.option('SetLow');
   var SetHigh = Settings.option('SetHigh');   
-  var SGVMax = SetHigh * SetLow / SGVMin;
+  var SGVMax = stats.max * Math.pow(stats.max / SGVMin, 1/7);
   var yLow = parseInt(main.size().y * (1 - (Math.log(SetLow/SGVMin) / Math.log(SGVMax/SGVMin))));
-  var yHigh = parseInt(main.size().y * (1 - (Math.log(SetHigh/SGVMin) / Math.log(SGVMax/SGVMin)))); 
+  var yHigh = parseInt(main.size().y * (1 - (Math.log(SetHigh/SGVMin) / Math.log(SGVMax/SGVMin))));
   
-  if (isNaN(SGV)) {
-    // Invalid SGV:
-    console.log('SGV is NaN');
+  var i;
+  var xSGV;
+  var ySGV;
+  
+  // Valid SGV - display:
+  console.log('ySGV is numeric');
     
-    // Hide circle:
-    circleBack.position(new Vector2(parseInt(main.size().x / 2), -50));
-    circle.position(new Vector2(parseInt(main.size().x / 2), -50));
-    textfield.position(new Vector2(parseInt((main.size().x - textfield.size().x) / 2), -50));
-    
-  } else {
-    // Valid SGV - display:
-    console.log('ySGV is numeric');
-    
-    //Calculate position and rounded values:
-    SGVMax = Math.max(SetHigh * SetLow / SGVMin, SGV * Math.pow(SGV / SGVMin, 1/7));
-    yLow = parseInt(main.size().y * (1 - (Math.log(SetLow/SGVMin) / Math.log(SGVMax/SGVMin))));
-    yHigh = parseInt(main.size().y * (1 - (Math.log(SetHigh/SGVMin) / Math.log(SGVMax/SGVMin)))); 
-    
-    var ySGV = parseInt(main.size().y * (1 - (Math.log(parseFloat(SGV)/SGVMin) / Math.log(SGVMax/SGVMin))));
-    var RoundFactor = Math.pow(10, Units[Unit].Precision);
-    var sgvDisplay = (Math.floor(SGV * RoundFactor) / RoundFactor).toFixed(Math.max(Units[Unit].Precision, 0));
-
-    // Update text:
-    console.log('sgvDisplay = ' + sgvDisplay);
-    textfield.text(sgvDisplay);
-    
-    // Text size:
-    textfield.size(new Vector2(60, Units[Unit].TextFieldHeight));
-    textfield.font(Units[Unit].Font);
-    
-    // Text colour:
-    if (isLow(SGV)) {
-      textfield.color(Colors.Low);
+  //Calculate position and rounded values:
+  //SGVMax = Math.max(SetHigh * SetLow / SGVMin, SGV * Math.pow(SGV / SGVMin, 1/7));
+  //yLow = parseInt(main.size().y * (1 - (Math.log(SetLow/SGVMin) / Math.log(SGVMax/SGVMin))));
+  //yHigh = parseInt(main.size().y * (1 - (Math.log(SetHigh/SGVMin) / Math.log(SGVMax/SGVMin)))); 
+  
+  // Plot history:
+  for (i = 0; i < data.length; i++) {
+    if (isNaN(data[i].sgv)){
+      // Position circle:
+      circleHistBack[i].position(new Vector2(-50,-50));
+      circleHist[i].position(new Vector2(-50,-50));
     } else {
-      if (isHigh(SGV)) {
-        textfield.color(Colors.High);
-      } else {
-        textfield.color(Colors.Mid);
+      // Calculate values:
+      xSGV = parseInt(main.size().x * (0.5 - (data[i].timeAgo / TimeSpan)));
+      ySGV = parseInt(main.size().y * (1 - (Math.log(parseFloat(data[i].sgv)/SGVMin) / Math.log(SGVMax/SGVMin))));
+     
+      // Position circle:
+      circleHistBack[i].position(new Vector2(xSGV, ySGV));
+      circleHist[i].position(new Vector2(xSGV, ySGV));
+      //circleHistBack[i].radius(parseInt(main.size().y * (0.23 * (1 - 0.5*(data[i].timeAgo / TimeSpan))) + 4));
+      //circleHist[i].radius(parseInt(main.size().y * (0.23 * (1 - 0.5*(data[i].timeAgo / TimeSpan)))));
+    }
+      
+    // Current value:
+    if (i === 0) {
+      // Update text:
+      if (stats.old) {
+        textfield.text("");
+      }else{
+        textfield.position(new Vector2(parseInt(xSGV - textfield.size().x / 2), ySGV - parseInt(textfield.size().y / 2)));
+        var RoundFactor = Math.pow(10, Units[Unit].Precision);
+        var displayText = (Math.floor(data[i].sgv * RoundFactor) / RoundFactor).toFixed(Math.max(Units[Unit].Precision, 0));
+        textfield.text(displayText);
+  
+        // Text size:
+        textfield.size(new Vector2(60, Units[Unit].TextFieldHeight));
+        textfield.font(Units[Unit].Font);
+    
+        // Text colour:
+        if (isLow(data[i].sgv)) {
+          textfield.color(Colors.Low);
+        } else {
+          if (isHigh(data[i].sgv)) {
+            textfield.color(Colors.High);
+          } else {
+            textfield.color(Colors.Mid);
+          }
+        }
       }
     }
-    
-    // Position circle:
-    circleBack.position(new Vector2(parseInt(main.size().x / 2), ySGV));
-    circle.position(new Vector2(parseInt(main.size().x / 2), ySGV));
-    textfield.position(new Vector2(parseInt((main.size().x - textfield.size().x) / 2), ySGV - parseInt(textfield.size().y / 2)));
   }
+  //Hide unused history circles:
+  for (i = data.length; i < History; i++) {
+    // Position circle:
+    circleHistBack[i].position(new Vector2(-50,-50));
+    circleHist[i].position(new Vector2(-50,-50));
+  }
+  
+  // Plot prediction:
+  for (i = 0; i < future.length; i++) { //i+=3) {
+    if (isNaN(future[i].sgv)){
+      // Position circle:
+      circlePredBack[i].position(new Vector2(-50,-50));
+      circlePred[i].position(new Vector2(-50,-50));
+    } else {
+      // Calculate values:
+      xSGV = parseInt(main.size().x * (0.5 - (future[i].timeAgo / TimeSpan)));
+      ySGV = parseInt(main.size().y * (1 - (Math.log(parseFloat(future[i].sgv)/SGVMin) / Math.log(SGVMax/SGVMin))));
     
+      // Position circle:
+      circlePredBack[i].position(new Vector2(xSGV, ySGV));
+      circlePred[i].position(new Vector2(xSGV, ySGV));
+    }  
+  }
+  //Hide unused prediction circles:
+  for (i = future.length; i < History; i++) {
+    // Position circle:
+    circlePredBack[i].position(new Vector2(-50,-50));
+    circlePred[i].position(new Vector2(-50,-50));
+  }
+
   // Position field rectangles and separator lines:
   low.size(new Vector2(main.size().x, main.size().y - yLow));
   low.position(new Vector2(0, yLow));
@@ -301,90 +499,123 @@ function UpdateMain(SGV) {
   clockText.text(Settings.option('FormatClock') + ':%M');
 }
 
-// GET NIGHTSCOUT DATA:
-function FetchSGV() {
-  var Result = {};
+function polyFit(Points, order) {
+  // Declare counters:
+	var col; // As Integer
+	var row; // As Integer
+
+	// FIND SUMS:
+
+	// Declare counters:
+	var i; // Point number
+	var o; // Power of x
+  var Ex = [ ]; // new double[2 * order];
+	var pEyx = [ ]; // new double[order];
+
+	// Zero sums:
+	for (o = 0; o <= 2*order; o++) {Ex.push(parseFloat(0));}
+  for (o = 0; o <= order; o++) {pEyx.push(parseFloat(0));}
+
+	// Find sums:
+	Ex[0] = Points.length;
+	for (i = 0; i < Points.length; i++) {
+		for (o = 1; o <= (2 * order); o++) {
+			Ex[o] += Math.pow(Points[i][0], o);
+		}
+		for (o = 0; o <= order; o++) {
+			pEyx[o] += (Points[i][1] * Math.pow(Points[i][0], o));
+		}
+	}
   
-  // Construct URL:
-  var Site = Settings.option('NightscoutURL');
-  var Units = Settings.option('NightscoutUnits');
-  var URL = Site + '/pebble?units=' + Units;
-  console.log('Nightscout URL: ' + URL);
+	// CREATE MATRIX:
 
-  // Execute the request:
-  console.log('Starting ajax');
-  ajax({ url: URL, type: 'json' },
-       function(data, status, req) {
-         console.log('ajax result: ' + JSON.stringify(data));
-         // Success, process result:
-         try {
-           var dateTime = data.bgs[0].datetime;
-           var timeLast = LastData.bgs[0].datetime;
-           var isNew = dateTime != timeLast;
+	// Reorder matrix for correct order:
+	var mat = [ ]; //new double[order, order + 1];
 
-           Result.data = data;
-           Result.isNew = isNew;
+	// Create matrix:
+	for (row = 0; row <= order; row++) {
+    var newRow = [ ];
+    for (col = 0; col <= order; col++) {
+      newRow.push(Ex[col + row]);
+		}
+    mat.push(newRow);
+	}
+  
+	// PREPARE FOR GAUSSIAN ELIMINATION PROCESS:
 
-         } catch(err) {
-           Result.data = LastData;
-           Result.isNew = false;
-           console.log('Data interpret error: ' + err.message);
-         }
-         Update(Result);
-       },
-       function(error) {
-         console.log('ajax error: ' + error);
-         Result.data = LastData;
-         Result.isNew = false;
-         Update(Result);
-       }
-    );
+	// Modifying matrix:
+	//  M M M    M M M Eyx
+	//  M M M -> M M M Eyx
+	//  M M M    M M M Eyx
+	for (row = 0; row <= order; row++) {
+		mat[row].push(pEyx[row]);
+	}
+  
+	// GUASSIAN ELIMINATION:
+
+	// Eliminate lower triangle of matrix:
+	//  M M M    M' M' M' Eyx'
+	//  M M M -> 0' M' M' Eyx'
+	//  M M M    0' 0' M' Eyx'
+	
+	for (o = 0; o < order; o++) {
+		for (row = o + 1; row <= order; row++) {
+			var kRow = mat[row][o] / mat[o][o];
+			for (col = 0; col <= order + 1; col++) {
+				mat[row][col] = mat[row][col] - (kRow * mat[o][col]);
+			}
+		}
+	}
+  
+	// Find Coefficients:
+	var ValueWanted; // As Integer
+	var pA = [ ]; // new double[order] 'order coefficient vector
+  var SpareAddress = [ ]; // As Integer[order - 1];
+	var num; // As Double
+  
+  for (o = 0; o <= order; o++) {pA.push(parseFloat(0));}
+  for (o = 0; o < order; o++) {SpareAddress.push(0);}
+  
+	// Set up addresses of variables not being evaluated:
+	for (ValueWanted = order; ValueWanted >= 0; ValueWanted--) {
+		for (o = 0; o < ValueWanted; o++) {
+			SpareAddress[o] = o;
+		}
+		for (o = ValueWanted; o < order; o++) {
+			SpareAddress[o] = o + 1;
+		}
+
+		// FINAL CALCULATIONS:
+
+		// Create num:
+		num = mat[ValueWanted][order + 1];
+		for (o = 0; o < order; o++) {
+			num -= (mat[ValueWanted][SpareAddress[o]] * pA[SpareAddress[o]]);
+		}
+	
+		// Calculate coefficient:
+		pA[ValueWanted] = num / mat[ValueWanted][ValueWanted];
+  }
+	
+	return (pA);
 }
 
-// UPDATE STATUS:
-function Update(result) {
-  // GET SGV FROM NIGHTSCOUT:
-  //var result = FetchSGV();
-  var isNew = result.isNew;
-  var data = result.data;
-  console.log('data: ' + JSON.stringify(data));
-
-  // Evaluate result:
-  var SGV = data.bgs[0].sgv;
-  var SVGLast = LastData.bgs[0].sgv;
-  var datetime = data.bgs[0].datetime;
-  var timeAgo = Date.now() - datetime;
-  
-  console.log('Sample time: ' + datetime);
-  //console.log('NitSct time: ' + data.status[0].now);
-  console.log('Current time: ' + Date.now());
-  console.log('Time ago: ' + timeAgo);
-  console.log('New: ' + isNew);
-  
-  // Don't use old values:
-  if (timeAgo > 600000) {
-    console.log('Data older than 10 minutes');
-    SGV = NaN;
+function printArray(arr) {
+  if (Array.isArray(arr)) {
+    for (var i = 0; i < arr.length; i++) {
+      var line = "";
+      if (Array.isArray(arr[i])) {
+        for (var ii = 0; ii < arr[i].length; ii++) {
+          line += arr[i][ii] + ", ";
+        }
+      } else {
+        line = arr[i];
+      }
+      console.log(line);
+    }
+  } else {
+    console.log(arr);
   }
-  
-  // Notify the user:
-  if (isNew && !isNaN(SGV)) {
-    // Low (every time):
-    if (isLow(SGV)) {Vibe.vibrate('long');}
-    
-    // High (first time):
-    if (isHigh(SGV) && !isHigh(SVGLast)) {Vibe.vibrate('short');}
-  }
-  
-  // Update main value textfield
-  UpdateMain(SGV);
-  console.log('main window loaded with value');
-  
-  // Save status:
-  LastData = data;
-  
-  // Loop:
-  setTimeout(function(){FetchSGV();},60000);
 }
 
 function isLow(sgv) {return (sgv < parseFloat(Settings.option('SetLow')));}

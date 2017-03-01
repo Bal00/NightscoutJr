@@ -35,7 +35,7 @@ var Units = {
   },
 };
 var TimeSpan = 3600000;
-var History = 6;
+var History = 7;
 
 // USER SETTINGS:
 var clayConfig = require('./config');
@@ -303,8 +303,8 @@ function Update(data) {
   
   // Evaluate result:
   var now = Date.now();
-  var SGV = data[0].sgv;
-  var SVGLast = LastData[0].sgv;
+  //var SGV = data[0].sgv;
+  //var SVGLast = LastData[0].sgv;
   //var datetime = data[0].date;
   //var timeAgo = now - datetime;
   
@@ -314,11 +314,11 @@ function Update(data) {
     data[i].timeAgo = now - data[i].date;
   }
   
-  // Declare variables:
+  //  Declare variables:
   var future = [ ];
   var coeffs = [0, 0, data[0].sgv];
   
-  // Prepare to predict future values:
+  //  Prepare to predict future values:
   for (i = 0; i < History; i++) {
     future.push({"timeAgo": -300000 * i});
     future[i].date = now - future[i].timeAgo;
@@ -331,7 +331,7 @@ function Update(data) {
       var order = 2;
       coeffs = polyFit([[data[2].timeAgo/10000,data[2].sgv],[data[1].timeAgo/10000,data[1].sgv],[data[0].timeAgo/10000,data[0].sgv]],order);
       
-      // Predict future values:
+      //  Predict future values:
       for (i = 0; i < History; i++) {
         future[i].sgv = 0;
         for (var pow = 0; pow <= order; pow++) {
@@ -361,10 +361,11 @@ function Update(data) {
   // Notify the user:
   if (stats.isNew && !stats.old) {
     // Low (every time):
-    if (isLow(SGV)) {Vibe.vibrate('long');}
-    
+    if (isLow(data[0].sgv)) {Vibe.vibrate('long');}
+    if (isLow(future[3].sgv)) {Vibe.vibrate('long');}
     // High (first time):
-    if (isHigh(SGV) && !isHigh(SVGLast)) {Vibe.vibrate('short');}
+    if (isHigh(data[0].sgv) && !isHigh(LastData[0].sgv)) {Vibe.vibrate('short');}
+    
   }
   
   // Update main value textfield

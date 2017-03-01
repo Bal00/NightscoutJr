@@ -344,7 +344,7 @@ function Update(data) {
   }
 
   // Analyse:
-  var stats = {"old":  data[0].timeAgo > 600000, "max": Settings.option('SetHigh') * Settings.option('SetLow') / Units[Settings.option('NightscoutUnits')].SGVMin};
+  var stats = {"old":  data[0].timeAgo > 600000, "max": 0};
   for (i = 0; i < data.length; i++) {
     if (!isNaN(data[i].sgv)) {stats.max = Math.max(stats.max,data[i].sgv);}
   }
@@ -387,7 +387,7 @@ function UpdateMain(data, future, stats) {
   var SGVMin = Units[Unit].SGVMin;
   var SetLow = Settings.option('SetLow');
   var SetHigh = Settings.option('SetHigh');   
-  var SGVMax = stats.max * Math.pow(stats.max / SGVMin, 1/7);
+  var SGVMax = Math.max(SetHigh * SetLow / SGVMin, stats.max * Math.pow(stats.max / SGVMin, 1/7))             
   var yLow = parseInt(main.size().y * (1 - (Math.log(SetLow/SGVMin) / Math.log(SGVMax/SGVMin))));
   var yHigh = parseInt(main.size().y * (1 - (Math.log(SetHigh/SGVMin) / Math.log(SGVMax/SGVMin))));
   

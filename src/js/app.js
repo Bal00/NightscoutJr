@@ -9,17 +9,17 @@ var ajax = require('ajax');
 var Vector2 = require('vector2');
 var Vibe = require('ui/vibe');
 var Settings = require('settings');
-//var Moment = require('moment');
-//var Clock = require('clock');
 var Feature = require('platform/feature');
 var Clay = require('./clay');
+//var Moment = require('moment');
+//var Clock = require('clock');
 
 // CONSTANTS:
 var Colors = {
   'High': 'orange',
   'Mid': 'islamicGreen',
   'Low': 'red',
-};
+}; // Background colours
 var Units = {
   'mmol': {
     'Font': 'bitham-34-medium-numbers', 
@@ -33,48 +33,36 @@ var Units = {
     'Precision': -1,
     'TextFieldHeight': 36,
   },
-};
-var TimeSpan = 3600000;
-var History = 7;
+}; // SGV units
+var TimeSpan = 3600000; // Width (time period) of the data view in milliseconds
+var History = 7; // Number of historical values to fetch and preductions to make
 
 // USER SETTINGS:
 var clayConfig = require('./config');
 //var clayAction = require('./config-action');
-//var UserData = {'NightscoutURL': 'https://mynightscout.azurewebsites.net',
-//                'NightscoutUnits': 'mmol',
-//                'SetLow': 4,
-//                'SetHigh': 7,
-//                'FormatClock': '%H',
-//               };
 
-var clay = new Clay(clayConfig, null, {autoHandleEvents: false}); //var clay = new Clay(clayConfig, clayAction, {userData: UserData, autoHandleEvents: false}); //var clay = new Clay(clayConfig);
-
+var clay = new Clay(clayConfig, null, {autoHandleEvents: false}); 
+//var clay = new Clay(clayConfig, clayAction, {userData: UserData, autoHandleEvents: false}); 
+//var clay = new Clay(clayConfig);
 
 Pebble.addEventListener('showConfiguration', function(e) {
-  
   console.log('showConfiguration argument: ' + JSON.stringify(e));
   console.log('Settings.option(): ' + JSON.stringify(Settings.option()));
   
-  //if (SettingsValid()) {
-    //clayConfig.getItemByAppKey('NightscoutURL').set(Settings.option('NightscoutURL'));
-  //}
-  
+  //if (SettingsValid()) { 
+  //  var claySettings = JSON.parse(localStorage.getItem("clay-settings"));
+  //  for (var key in claySettings) {
+  //    if (claySettings.hasOwnProperty(key)) {
+  //      if(key in Settings.option){
+  //        console.log(key + " -> " + Settings.option(key));
+  //        claySettings[key] = Settings.option(key);
+  //      }
+  //    }
+  //  }	
+  //  localStorage["clay-settings"] = JSON.stringify(claySettings);
   Pebble.openURL(clay.generateUrl());
-  
-//  var claySettings = JSON.parse(localStorage.getItem("clay-settings"));
-//  for (var key in claySettings) {
-//    if (claySettings.hasOwnProperty(key)) {
-//      if(key in Settings.option){
-//        console.log(key + " -> " + Settings.option(key));
-//        claySettings[key] = Settings.option(key);
-//      }
-//    }
-//  }	
-//  localStorage["clay-settings"] = JSON.stringify(claySettings);
-//  Pebble.openURL(clay.generateUrl());
-//  console.log("configuration shown");	
+  console.log("Configuration shown");	
 });
-
 
 Pebble.addEventListener('webviewclosed', function(e) {
   console.log('webviewclosed triggered and handled manually');
@@ -99,19 +87,21 @@ Pebble.addEventListener('webviewclosed', function(e) {
     // Save the Clay settings to the Settings module.
     //dict = CleanSettings(dict);
     Settings.option(dict);
-    //try {console.log('Settings saved: ' + JSON.stringify(dict));} catch(err) {console.log('Settings saved error: ' + err.message);}
+    try {console.log('Settings saved: ' + JSON.stringify(dict));} catch(err) {console.log('Settings saved but error reading result: ' + err.message);}
   } catch (err) {
     console.log('Settings error: ' + err.message);
   }
-    
+  
   // Update:
-  FetchSGV();
+  StartUp();
 });
 
 // PRIVATE SETTINGS:
-var LastData = [{date: 0, sgv: NaN}];
-var Ready = false;
-var SettingsMessageGiven = false;
+var LastData = [{date: 0, sgv: NaN}]; // Initial null data entry
+var Ready = false; // Flag for start-up complete (settings valid etc)
+var SettingsMessageGiven = false; // Flag for user message requesting settings
+var LastUpdate = 0; // For scheduling, observed time of last poll trigger event
+var NextUpdate = 0; // For scheduling, intended time of next poll
 
 // DECLARE MAIN WINDOW:
 var main = new UI.Window({backgroundColor: 'black'});
@@ -174,16 +164,17 @@ setTimeout(function() {
 function StartUp() {
  
   // Check for settings:
-  if (SettingsValid()) {
+  if (SettingsValid() && !Ready) {
     Ready = true;
     
     // Add elements as children to main window
     PopulateMain();
     
     // Paint window:
-    Update(LastData);
+    UpdateGUI(LastData,LastData,{"old":true,"max":0});
     
     // GET NIGHTSCOUT DATA:
+    console.log('Startup complete, first poll:');
     FetchSGV();
  
   } else {
@@ -206,7 +197,12 @@ function StartUp() {
     }
     
     // Wait for settings:
-    setTimeout(function(){StartUp();},10000);
+    setTimeout(function(){
+      if (!Ready) {
+      console.log('settings timeout');
+      StartUp();
+      }
+    },10000);
   }
 }
 
@@ -243,26 +239,24 @@ function PopulateMain() {
 function FetchSGV() {
   var Result = {};
   
-  // Construct URL:
-  var Site = Settings.option('NightscoutURL');
-  var Units = Settings.option('NightscoutUnits');
-  //var URL = Site + '/pebble?units=' + Units;
-  var URL = Site + '/api/v1/entries/sgv?count=' + History.toFixed(0);
-  console.log('Nightscout URL: ' + URL);
+  LastUpdate = Date.now();
+  console.log('Fetching data at ' + TimeString(new Date(LastUpdate)));
 
-  // Execute the request:
-  console.log('Starting ajax');
-  ajax({ url: URL },
+  try {
+    // Construct URL:
+    var Site = Settings.option('NightscoutURL');
+    var Units = Settings.option('NightscoutUnits');
+    var URL = Site + '/api/v1/entries/sgv?count=' + History.toFixed(0);
+
+    // Execute the request:
+    ajax({ url: URL },
        function(data, status, req) {
-         console.log('ajax result: ' + data);
          // Success, process result:
          try {
            var entryStrings = data.split('\n');
-           console.log('First line: ' + entryStrings[0]);
            var Entries = [ ];
            for (var i = 0; i < entryStrings.length; i++) {
              var entryValues = entryStrings[i].split('\t');
-             
              var Entry = {
                "dateString": entryValues[0], 
                "date": Number(entryValues[1]), 
@@ -273,121 +267,78 @@ function FetchSGV() {
              if (Units == "mmol") {Entry.sgv = Entry.sgv / 18;}
              Entries.push(Entry);
            }
-
            Result = Entries;
-           //Result.isNew = isNew;
-
+           Update(Result, true);
          } catch(err) {
-           Result = LastData;
-           //Result.isNew = false;
            console.log('Data interpret error: ' + err.message);
+           Result = LastData;
+           Update(Result, false);
          }
-         Update(Result);
        },
        function(error) {
-         console.log('ajax error: ' + error);
+         console.log('ajax returned error: ' + error);
          Result = LastData;
-         //Result.isNew = false;
-         Update(Result);
+         Update(Result, false);
        }
     );
+  } catch(err) {
+    console.log('ajax error: ' + err);
+    Result = LastData;
+    Update(Result, false);
+  }
 }
 
 // UPDATE STATUS:
-function Update(data) {
-  // GET SGV FROM NIGHTSCOUT:
-  //var result = FetchSGV();
-  //var isNew = result.isNew;
-  //var data = result.Entries;
-  console.log('data: ' + JSON.stringify(data));
+function Update(data, success) {
+  console.log('Data: ' + JSON.stringify(data));
   
   // Evaluate result:
   var now = Date.now();
-  //var SGV = data[0].sgv;
-  //var SVGLast = LastData[0].sgv;
-  //var datetime = data[0].date;
-  //var timeAgo = now - datetime;
   
   // Predict:
-  //  Adjust time:
-  for (var i = 0; i < data.length; i++) {
-    data[i].timeAgo = now - data[i].date;
-  }
-  
-  //  Declare variables:
-  var future = [ ];
-  var coeffs = [0, 0, data[0].sgv];
-  
-  //  Prepare to predict future values:
-  for (i = 0; i < History; i++) {
-    future.push({"timeAgo": -300000 * i});
-    future[i].date = now - future[i].timeAgo;
-    future[i].sgv = NaN;
-  }
-  
-  try {
-    if(data.length > 2){
-      //  Generate constants:
-      var order = 2;
-      coeffs = polyFit([[data[2].timeAgo/10000,data[2].sgv],[data[1].timeAgo/10000,data[1].sgv],[data[0].timeAgo/10000,data[0].sgv]],order);
-      
-      //  Predict future values:
-      for (i = 0; i < History; i++) {
-        future[i].sgv = 0;
-        for (var pow = 0; pow <= order; pow++) {
-          future[i].sgv += coeffs[pow]*Math.pow(future[i].timeAgo/10000,pow);
-        }
-      }
-    }
-  } catch(err) {
-    console.log("Unable to evaluate prediction polynomial: " + err.message);
-  }
+  var future = GetFuture(data, now);
 
   // Analyse:
-  var stats = {"old":  data[0].timeAgo > 600000, "max": 0};
-  for (i = 0; i < data.length; i++) {
-    if (!isNaN(data[i].sgv)) {stats.max = Math.max(stats.max,data[i].sgv);}
-  }
-  stats.isNew = data[0].date != LastData[0].date;
-  
-    // Debugging:
-  console.log('Sample time: ' + data[0].date);
-  //console.log('NitSct time: ' + data.status[0].now);
-  console.log('Current time: ' + now);
-  console.log('Time ago: ' + data[0].timeAgo);
-  console.log('New: ' + stats.isNew);
-  console.log('Stale (old): ' + stats.old);
+  var stats = GetStats(data);
   
   // Notify the user:
-  if (stats.isNew && !stats.old) {
+  //if (stats.isNew && !stats.old) {
+  if (!stats.old) {
     // Low (every time):
     if (isLow(data[0].sgv)) {Vibe.vibrate('long');}
     if (isLow(future[3].sgv)) {Vibe.vibrate('long');}
-    // High (first time):
+    // High (first time only):
     if (isHigh(data[0].sgv) && !isHigh(LastData[0].sgv)) {Vibe.vibrate('short');}
-    
   }
   
-  // Update main value textfield
-  UpdateMain(data, future, stats);
-  console.log('main window loaded with value');
+  // Update main GUI
+  UpdateGUI(data, future, stats);
   
   // Save status:
   LastData = data;
   
   // Loop:
-  setTimeout(function(){FetchSGV();},60000);
+  if (NextUpdate === 0) {NextUpdate = LastUpdate;}
+  var Lateness = LastUpdate - NextUpdate; // How late were we? (thanks Android!)
+  
+  if (success) {
+    NextUpdate = Math.max((LastUpdate + 5000), (LastUpdate - Lateness + 60000));
+  } else {
+    NextUpdate = (LastUpdate + 10000);
+  }
+  
+  console.log('Next poll scheduled in ' + ((NextUpdate - now)/1000) + ' s for ' + TimeString((new Date(NextUpdate))));
+  setTimeout(function(){FetchSGV();}, NextUpdate - now);
 }
 
-// Update display
-function UpdateMain(data, future, stats) {
+// UPDATE DISPLAY (GUI):
+function UpdateGUI(data, future, stats) {
   // Calculate coordinates:
-  //var SGV = data[0].sgv;
   var Unit = Settings.option('NightscoutUnits');
   var SGVMin = Units[Unit].SGVMin;
   var SetLow = Settings.option('SetLow');
   var SetHigh = Settings.option('SetHigh');   
-  var SGVMax = Math.max(SetHigh * SetLow / SGVMin, stats.max * Math.pow(stats.max / SGVMin, 1/7))             
+  var SGVMax = Math.max(SetHigh * SetLow / SGVMin, stats.max * Math.pow(stats.max / SGVMin, 1/7));
   var yLow = parseInt(main.size().y * (1 - (Math.log(SetLow/SGVMin) / Math.log(SGVMax/SGVMin))));
   var yHigh = parseInt(main.size().y * (1 - (Math.log(SetHigh/SGVMin) / Math.log(SGVMax/SGVMin))));
   
@@ -395,16 +346,8 @@ function UpdateMain(data, future, stats) {
   var xSGV;
   var ySGV;
   
-  // Valid SGV - display:
-  console.log('ySGV is numeric');
-    
-  //Calculate position and rounded values:
-  //SGVMax = Math.max(SetHigh * SetLow / SGVMin, SGV * Math.pow(SGV / SGVMin, 1/7));
-  //yLow = parseInt(main.size().y * (1 - (Math.log(SetLow/SGVMin) / Math.log(SGVMax/SGVMin))));
-  //yHigh = parseInt(main.size().y * (1 - (Math.log(SetHigh/SGVMin) / Math.log(SGVMax/SGVMin)))); 
-  
   // Plot history:
-  for (i = 0; i < data.length; i++) {
+  for (i = 0; i < Math.min(History, data.length); i++) {
     if (isNaN(data[i].sgv)){
       // Position circle:
       circleHistBack[i].position(new Vector2(-50,-50));
@@ -458,7 +401,7 @@ function UpdateMain(data, future, stats) {
   
   // Plot prediction:
   for (i = 0; i < future.length; i++) { //i+=3) {
-    if (isNaN(future[i].sgv)){
+    if (isNaN(future[i].sgv) || future[i].sgv <= 0){
       // Position circle:
       circlePredBack[i].position(new Vector2(-50,-50));
       circlePred[i].position(new Vector2(-50,-50));
@@ -500,6 +443,63 @@ function UpdateMain(data, future, stats) {
   clockText.text(Settings.option('FormatClock') + ':%M');
 }
 
+// ANALYSE HISTORICAL DATA:
+function GetStats(data) {
+  // Declare and initialise stats:
+  var stats = {"old":  data[0].timeAgo > 600000, "max": 0};
+  
+  // Calculate max:
+  for (var i = 0; i < data.length; i++) {
+    if (!isNaN(data[i].sgv)) {stats.max = Math.max(stats.max,data[i].sgv);}
+  }
+  
+  // Decide if data is new:
+  stats.isNew = data[0].date != LastData[0].date;
+  
+  // Return stats:
+  return stats;
+}
+
+// PREDICT FUTURE VALUES:
+function GetFuture(data, now) {
+  // Predict:
+  //  Adjust time:
+  for (var i = 0; i < data.length; i++) {
+    data[i].timeAgo = now - data[i].date;
+  }
+  
+  //  Declare variables:
+  var future = [ ];
+  var coeffs = [0, 0, data[0].sgv];
+  
+  //  Prepare to predict future values:
+  for (i = 0; i < History; i++) {
+    future.push({"timeAgo": -300000 * i});
+    future[i].date = now - future[i].timeAgo;
+    future[i].sgv = NaN;
+  }
+  
+  try {
+    if(data.length > 2){
+      //  Generate constants:
+      var order = 2;
+      coeffs = polyFit([[data[3].timeAgo/10000,data[3].sgv],[data[2].timeAgo/10000,data[2].sgv],[data[1].timeAgo/10000,data[1].sgv],[data[0].timeAgo/10000,data[0].sgv]],order);
+      
+      //  Predict future values:
+      for (i = 0; i < History; i++) {
+        future[i].sgv = 0;
+        for (var pow = 0; pow <= order; pow++) {
+          future[i].sgv += coeffs[pow]*Math.pow(future[i].timeAgo/10000,pow);
+        }
+      }
+    }
+  } catch(err) {
+    console.log("Unable to evaluate prediction polynomial: " + err.message);
+  }
+  return future;
+}
+
+// POLYNOMIAL CURVE FIT FOR PREDICTIONS:
 function polyFit(Points, order) {
   // Declare counters:
 	var col; // As Integer
@@ -601,26 +601,24 @@ function polyFit(Points, order) {
 	return (pA);
 }
 
-function printArray(arr) {
-  if (Array.isArray(arr)) {
-    for (var i = 0; i < arr.length; i++) {
-      var line = "";
-      if (Array.isArray(arr[i])) {
-        for (var ii = 0; ii < arr[i].length; ii++) {
-          line += arr[i][ii] + ", ";
-        }
-      } else {
-        line = arr[i];
-      }
-      console.log(line);
-    }
-  } else {
-    console.log(arr);
+// DECIDE IF VALUE IS LOW:
+function isLow(sgv) {return (sgv < parseFloat(Settings.option('SetLow')));}
+
+// DECIDE IF VALUE IS HIGH:
+function isHigh(sgv) {return (sgv >= parseFloat(Settings.option('SetHigh')));}
+
+// DETECT IF SETTINGS HAVE VALID VALUES:
+function SettingsValid() {
+  try {
+    var Unit = Settings.option('NightscoutUnits');
+    var SGVMin = Units[Unit].SGVMin;
+    return (SGVMin == SGVMin);
+  } catch(e) {
+    return (false);
   }
 }
 
-function isLow(sgv) {return (sgv < parseFloat(Settings.option('SetLow')));}
-function isHigh(sgv) {return (sgv >= parseFloat(Settings.option('SetHigh')));}
+// CLEAN SETTINGS (TO OVERCOME APPARENT BUG WITH CLAY)
 function CleanSettings(str) {
   //var str = Settings;
   console.log('Raw settings: ' + str);
@@ -647,15 +645,8 @@ function CleanSettings(str) {
   //}
   return (str);
 }
-function SettingsValid() {
-  try {
-    var Unit = Settings.option('NightscoutUnits');
-    var SGVMin = Units[Unit].SGVMin;
-    return (SGVMin == SGVMin);
-  } catch(e) {
-    return (false);
-  }
-}
+
+// CLEAN SETTINGS (TO OVERCOME APPARENT BUG WITH CLAY)
 function getSettings(strSettings) {
   strSettings = strSettings.replace('%5C','');
   console.log('getSettings clean settings stage 1: ' + strSettings);
@@ -672,4 +663,28 @@ function getSettings(strSettings) {
   for (var key in SettingsRaw) {SettingsOut[key] = SettingsRaw[key].value;}
   console.log('getSettings output: ' + JSON.stringify(SettingsOut));
   return (SettingsOut);
+}
+
+// FORMAT TIME AS STRING (FOR DEBUGGING):
+function TimeString(time) {
+  return (('0' + time.getHours()).slice(-2) + ":" + ('0' + time.getMinutes()).slice(-2) + ":" + ('0' + time.getSeconds()).slice(-2));
+}
+
+// PRINT ARRAYS TO CONSOLE (FOR DEBUGGING):
+function printArray(arr) {
+  if (Array.isArray(arr)) {
+    for (var i = 0; i < arr.length; i++) {
+      var line = "";
+      if (Array.isArray(arr[i])) {
+        for (var ii = 0; ii < arr[i].length; ii++) {
+          line += arr[i][ii] + ", ";
+        }
+      } else {
+        line = arr[i];
+      }
+      console.log(line);
+    }
+  } else {
+    console.log(arr);
+  }
 }
